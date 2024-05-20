@@ -28,3 +28,6 @@ venv/
 
 # OS or editor backups
 *~
+
+# DB
+.db
