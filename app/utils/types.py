@@ -5,8 +5,7 @@ from typing import Optional
 class ResourceRequest(BaseModel):
     owner_id: int
     recipient_id: int
-    file_path: str
-    storage_provider: str
+    file_id: int
     permission: str
 
 class StatusDetail(BaseModel):
@@ -24,3 +23,4 @@ class Message(Enum):
     NOT_FOUND = "File not found"
     DENIED_ACTION = "Permission Denied: You do not have the required permissions to perform this action"
     ERROR = "An error occurred"
+    FILE_ALREADY_SHARED = "File already shared"
