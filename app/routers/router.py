@@ -1,23 +1,24 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import RedirectResponse
-# from fastapi.responses import JSONResponse
 
 from app.services.EmailManager import EmailManager
 from app.services.PresignedURLManager import PresignedURLManager
 from app.services.ResourceManager import ResourceManager
 from app.utils.types import Message, ResourceRequest, ResourceResponse
 
+from dotenv import load_dotenv
+import os
+
 router = APIRouter()
+load_dotenv()
 
 @router.get("/access-file/{email}/{user_token}")
 async def access_file(email: str, user_token: str):
     if not user_token:
         raise HTTPException(status_code=400, detail="Token is required")
     
-    db_name = "file_sharing.db"
-    
     ########## Get User Details ##########
-    resourceManager = ResourceManager(db_name)
+    resourceManager = ResourceManager(db_name=os.getenv("DATABASE_NAME"))
     isValidToken = resourceManager.is_token_already_exists(email, user_token)
 
     ########## Presigned URL Operations ##########
@@ -31,7 +32,6 @@ async def access_file(email: str, user_token: str):
 
 @router.post("/share/", response_model=ResourceResponse)
 async def share(resource: ResourceRequest):
-    db_name = "file_sharing.db"
 
     ########## Request Payload ##########
     owner_id = resource.owner_id
@@ -41,7 +41,7 @@ async def share(resource: ResourceRequest):
     email = resource.email
 
     ########## Share Resource Operations ##########
-    resourceManager = ResourceManager(db_name)
+    resourceManager = ResourceManager(db_name=os.getenv("DATABASE_NAME"))
     resourceManager.connect()
 
     file_id = resourceManager.get_file_id(file_id, owner_id, remote_path = "", generated_path = "") # Check if file info is already present in the database
@@ -58,9 +58,9 @@ async def share(resource: ResourceRequest):
     resourceManager.close()
 
     ########## Email Operations ##########
-    # emailManager = EmailManager()
-    # email_body = f"Hello User,\n\nYou can access your file using the following link:\n\n{url}\n\nBest regards,\nUser"
-    # emailManager.send_email(email, "File Shared", email_body)
+    emailManager = EmailManager()
+    email_body = f"Hello User,\n\nYou can access your file using the following link:\n\n{url}\n\nBest regards,\nUser"
+    emailManager.send_email(email, "File Shared", email_body)
 
     return {
         "status": HTTPException(status_code=200),
