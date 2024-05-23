@@ -31,8 +31,19 @@ cursor.execute('''
         file_id INTEGER,
         user_id INTEGER,
         permission_type TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (file_id) REFERENCES files(id),
         FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+''')
+
+# Create the "permissions" table
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS tokens (
+        id INTEGER PRIMARY KEY,
+        email TEXT,
+        token TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
 ''')
 
