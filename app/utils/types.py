@@ -7,6 +7,9 @@ class ResourceRequest(BaseModel):
     recipient_id: int
     file_id: int
     permission: str
+    email: str
+    bucket_name: str
+    object_name: str
 
 class StatusDetail(BaseModel):
     status_code: int
@@ -16,6 +19,7 @@ class StatusDetail(BaseModel):
 class ResourceResponse(BaseModel):
     status: StatusDetail
     message: str
+    url: Optional[str] = None
 
 class Message(Enum):
     PERMISSION_DENIED = "Permission Denied: You are not the owner of the file"
