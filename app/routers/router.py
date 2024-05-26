@@ -2,10 +2,9 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import RedirectResponse
 from fastapi.openapi.docs import get_swagger_ui_html
 
-# from app.services.EmailManager import EmailManager
 from app.services.PresignedURLManager import PresignedURLManager
 from app.services.ResourceManager import ResourceManager
-from app.utils.types import Message, ResourceDelete, Request, Response, ResourceUpdate
+from app.utils.types import Message, Request, Response
 
 from dotenv import load_dotenv
 import os
@@ -33,9 +32,9 @@ async def access_file(user_token: str):
 
         return RedirectResponse(url=presigned_url)
     else:
-        raise HTTPException(status_code=403, detail="Invalid or expired token")
+        raise HTTPException(status_code=403, detail=Message.DENIED_ACTION.value)
 
-@router.post("/grant-access/", response_model=Response, tags=["Resource"])
+@router.post("/access/", response_model=Response, tags=["Resource"])
 async def share(resource: Request):
 
     ########## Request Payload ##########
@@ -56,12 +55,7 @@ async def share(resource: Request):
     )
 
     return_response = {}
-    if result[0] == Message.FILE_ALREADY_SHARED.value:
-        return_response = {
-            "status": HTTPException(status_code=200),
-            "message": result[0]
-        }
-    elif result[0] == Message.ERROR.value:
+    if result[0] == Message.ALREADY_SHARED.value or result[0] == Message.ERROR.value or result[0] == Message.PERMISSION_UPDATED.value:
         return_response = {
             "status": HTTPException(status_code=200),
             "message": result[0]
@@ -76,12 +70,30 @@ async def share(resource: Request):
         return_response = {
             "status": HTTPException(status_code=200),
             "message": result[0]
-            # "url": url,
         }
 
     resourceManager.close()
 
     return return_response
+
+@router.patch('/access/', response_model=Response)
+async def update_access():
+    pass
+
+@router.delete('/access/{user_token}', response_model=Response)
+async def remove_access(user_token: str):
+    ########## Share Resource Operations ##########
+    resourceManager = ResourceManager()
+    resourceManager.connect()
+
+    result = resourceManager.remove_access(user_token)
+
+    resourceManager.close()
+
+    return {
+        "status": HTTPException(status_code=200),
+        "message": result
+    }
 
 @router.get("/docs", include_in_schema=False)
 async def custom_swagger_ui_html():
@@ -90,11 +102,3 @@ async def custom_swagger_ui_html():
         title="My API",
         swagger_favicon_url="https://example.com/favicon.ico",
     )
-
-@router.patch('/update-access/', response_model=ResourceUpdate)
-async def update_access():
-    pass
-
-@router.delete('/remove-access/', response_model=ResourceDelete)
-async def remove_access():
-    pass
