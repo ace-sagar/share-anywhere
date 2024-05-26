@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import RedirectResponse
+from fastapi.openapi.docs import get_swagger_ui_html
 
 from app.services.EmailManager import EmailManager
 from app.services.PresignedURLManager import PresignedURLManager
@@ -12,7 +13,7 @@ import os
 router = APIRouter()
 load_dotenv()
 
-@router.get("/access-file/{email}/{user_token}")
+@router.get("/access-file/{email}/{user_token}", tags=["Resource"])
 async def access_file(email: str, user_token: str):
     if not user_token:
         raise HTTPException(status_code=400, detail="Token is required")
@@ -21,16 +22,17 @@ async def access_file(email: str, user_token: str):
     resourceManager = ResourceManager(db_name=os.getenv("DATABASE_NAME"))
     isValidToken = resourceManager.is_token_already_exists(email, user_token)
 
+    if not isValidToken:
+        raise HTTPException(status_code=403, detail="Invalid or expired token")
+    
     ########## Presigned URL Operations ##########
     presignedURLManager = PresignedURLManager()
     
-    if not isValidToken:
-        raise HTTPException(status_code=403, detail="Invalid or expired token")
 
     presigned_url = presignedURLManager.generate_presigned_url()
     return RedirectResponse(url=presigned_url)
 
-@router.post("/share/", response_model=ResourceResponse)
+@router.post("/share/", response_model=ResourceResponse, tags=["Resource"])
 async def share(resource: ResourceRequest):
 
     ########## Request Payload ##########
@@ -48,22 +50,38 @@ async def share(resource: ResourceRequest):
 
     result = resourceManager.share_file(file_id, owner_id, recipient_id, permission) # Share file with another user
 
-    url = None
-    if not result == Message.FILE_ALREADY_SHARED.value:
+    return_response = {}
+
+    if result == Message.PERMISSION_DENIED.value or result == Message.FILE_ALREADY_SHARED.value:
+        return_response = {
+            "status": HTTPException(status_code=200),
+            "message": result
+        }
+    else:
         host = 'http://127.0.0.1:8000/'
         token = resourceManager.generate_token()
         resourceManager.store_token(email, token)
         url = f"{host}access-file/{email}/{token}"
-    
+
+        return_response = {
+            "status": HTTPException(status_code=200),
+            "message": result,
+            "url": url,
+        }
+
     resourceManager.close()
 
     ########## Email Operations ##########
-    emailManager = EmailManager()
-    email_body = f"Hello User,\n\nYou can access your file using the following link:\n\n{url}\n\nBest regards,\nUser"
-    emailManager.send_email(email, "File Shared", email_body)
+    # emailManager = EmailManager()
+    # email_body = f"Hello User,\n\nYou can access your file using the following link:\n\n{url}\n\nBest regards,\nUser"
+    # emailManager.send_email(email, "File Shared", email_body)
 
-    return {
-        "status": HTTPException(status_code=200),
-        "message": result,
-        "url": url
-    }
+    return return_response
+
+@router.get("/docs", include_in_schema=False)
+async def custom_swagger_ui_html():
+    return get_swagger_ui_html(
+        openapi_url="/openapi.json",
+        title="My API",
+        swagger_favicon_url="https://example.com/favicon.ico",
+    )

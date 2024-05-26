@@ -43,7 +43,11 @@
 from fastapi import FastAPI
 from app.routers.router import router as item_router
 
-app = FastAPI()
+app = FastAPI(
+    title="Share Anywhere API",
+    description="This is a very fancy project, with auto docs for the API and everything",
+    version="1.0",
+)
 
 # Include the router
 app.include_router(item_router)
