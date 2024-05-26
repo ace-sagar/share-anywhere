@@ -1,18 +1,27 @@
-import sqlite3
 from typing import Any
 import boto3
 
+from dotenv import load_dotenv
+import os
+load_dotenv()  # Load environment variables from .env file
+
 class PresignedURLManager():
+    # AWS credentials
+    AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+    AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+    REGION_NAME = os.getenv("REGION_NAME")
+    BUCKET_NAME = os.getenv("BUCKET_NAME")
 
-    def __init__(self, bucket_name: str = "myshareanywhere", object_name: str = "dummy-2.pdf", db_name: str = "", region_name: str = 'ap-south-1', expiration: int = 3600) -> None:
+    def __init__(self) -> None:
         # Initialize the S3 client
-        self.s3 = boto3.client('s3', region_name='ap-south-1')
+        self.s3 = boto3.client(
+            's3',
+            aws_access_key_id=self.AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=self.AWS_SECRET_ACCESS_KEY,
+            region_name=self.REGION_NAME
+        )
 
-        self.bucket_name = bucket_name
-        self.object_name = object_name
-        self.expiration = expiration
-
-    def generate_presigned_url(self) -> (Any | None):
+    def generate_presigned_url(self, object_name: str, expiration: int = 3600) -> (Any | None):
         """
         Generate a presigned URL for an S3 object
 
@@ -23,9 +32,9 @@ class PresignedURLManager():
         """
         try:
             response = self.s3.generate_presigned_url('get_object',
-                                                Params={'Bucket': self.bucket_name,
-                                                        'Key': self.object_name},
-                                                ExpiresIn=self.expiration)
+                                                Params={'Bucket': self.BUCKET_NAME,
+                                                        'Key': object_name},
+                                                ExpiresIn=expiration)
         except Exception as e:
             print(e)
             return None

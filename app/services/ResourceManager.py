@@ -1,180 +1,90 @@
 import sqlite3
-from typing import Literal
-
+import uuid
 from app.utils.types import Message
 
-import uuid
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 class ResourceManager():
 
-    def __init__(self, db_name) -> None:
+    @staticmethod
+    def generate_token():
+        return str(uuid.uuid4())
+    
+    def __init__(self) -> None:
         # DB Config
-        self.db_name = db_name
+        self.db_name = os.getenv("DATABASE_NAME")
         self.conn = None
         self.cursor = None
-
+    
     def connect(self):
         try:
             self.conn = sqlite3.connect(self.db_name)
             self.conn.isolation_level = None  # Enable autocommit mode
             self.cursor = self.conn.cursor()
-            print("Database connection established - Resource")
+            print("Database connection established")
         except sqlite3.Error as e:
-            print("Resource - Error connecting to the database:", e)
+            print("Error connecting to the database:", e)
 
     def close(self):
         if self.conn:
             self.conn.close()
-            print("Database connection closed - Resource")
+            print("Database connection closed")
     
-    def share_file(self, file_id: int, owner_id: int, recipient_id: int, permission_type: str) -> Literal[Message.PERMISSION_DENIED, Message.DENIED_ACTION, Message.NOT_FOUND, Message.SHARED_SUCCESS]:
+    def grant_access(
+            self,
+            owner_email: str, 
+            recipient_email: str, 
+            file_name: str,
+            container: str, 
+            bucket_name: str, 
+            provider: str,
+            permission: str
+    ) -> list[str]:
         try:
-            # # Verify owner permissions
-            self.cursor.execute('SELECT * FROM files WHERE id=? AND user_id=?', (file_id, owner_id))
-            isOwner = self.cursor.fetchone()
-            if not isOwner:
-                return Message.PERMISSION_DENIED.value
-            
             # Verify if permission is already exists
-            self.cursor.execute('SELECT * FROM permissions WHERE file_id=? AND user_id=?', (file_id, recipient_id))
-            permissionAlreadyExist = self.cursor.fetchone()
-            if permissionAlreadyExist:
-                return Message.FILE_ALREADY_SHARED.value
+            self.cursor.execute('SELECT * FROM resources WHERE owner_email=? AND recipient_email=? AND file_name=?', 
+                (owner_email, recipient_email, file_name))
+            isFileAlreadyShared = self.cursor.fetchone()
+            if isFileAlreadyShared:
+                return [Message.FILE_ALREADY_SHARED.value]
             
             # Grant permission
-            self.cursor.execute('''INSERT OR IGNORE INTO permissions (file_id, user_id, permission_type) VALUES (?, ?, ?)''', 
-                                (file_id, recipient_id, permission_type))
-
-            return Message.SHARED_SUCCESS.value
-        except sqlite3.Error as e:
-            # Rollback transaction on error
-            self.conn.rollback()
-            print('Share file Exception: ', e)
-            return Message.ERROR.value
-   
-    def check_access(self, user_id: int, file_id: int, required_permission: str) -> (bool | Literal[Message.ERROR]):
-        try:
-            # Check if the user has the required permission
+            token = ResourceManager.generate_token()
             self.cursor.execute('''
-            SELECT * FROM permissions WHERE file_id=? AND user_id=? AND permission_type=?
-            ''', (file_id, user_id, required_permission))
+                INSERT OR IGNORE INTO resources (owner_email, recipient_email, file_name, container, bucket_name, provider, permission, token, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
+                (owner_email, recipient_email, file_name, container, bucket_name, provider, permission, token, 1)
+            )
+            
+            # Purpose: To verify the outcome of a successful SQL operation.
+            if self.cursor.lastrowid:
+                return [Message.SHARED_SUCCESS.value, token]
+            else:
+                return [Message.ERROR.value]
+        except sqlite3.Error as e:
+            # Purpose: To handle any exceptions or errors that occur during the execution of the SQL operation. Rollback transaction on error.
+            self.conn.rollback()
+            print('Exception on share file: ', e)
+            return [Message.ERROR.value]
 
-            has_permission = (self.cursor.fetchone()) is not None
-
-            return has_permission
-        except Exception as e:
-            print('Check Access Exception: ', e)
-            return Message.ERROR.value
-
-    def access_file(self, user_id: int, file_id: int, action: str):
+    def get_resource_details(self, token):
         try:
-            # Fetch file details
-            self.cursor.execute('SELECT file_path, storage_provider FROM files WHERE id=?', (file_id,))
-            file = self.cursor.fetchone()
-            if not file:
-                return Message.NOT_FOUND.value
-
-            file_path, storage_provider = file
-
-            # Check user permissions
-            if not self.check_access(user_id, file_id, action):
-                return Message.DENIED_ACTION.value
-
-            # Generate presigned URL for file access
-            bucket = file_path.split('/')[0]
-            object_name = '/'.join(file_path.split('/')[1:])
-            presigned_url = self.generate_presigned_url(bucket, object_name)
-
-            return presigned_url if presigned_url else "Error generating presigned URL"
-        except Exception as e:
-            print('Access File Exception: ', e)
-            return Message.ERROR.value
-
-    def get_file_id(self, file_id: str, owner_id: int, remote_path: str, generated_path: str):
-        try:
-            # Fetch file details
-            self.cursor.execute('SELECT id FROM files WHERE id=? AND user_id=?', (file_id, owner_id))
-            file = self.cursor.fetchone()
-
-            # If file info not found insert it
-            # if not file:
-            #     self.cursor.execute(
-            #         '''
-            #             INSERT OR IGNORE INTO files (user_id, remote_path, generated_path) VALUES (?, ?, ?)
-            #         ''',
-            #         (owner_id, remote_path, generated_path)
-            #     )
-            #     file_id = self.cursor.lastrowid
-
-            #     return file_id
-            # else:
-            #     return file[0]
-            return file[0] if file else Message.NOT_FOUND.value
-        except Exception as e:
-            print('Get File Id Exception: ', e)
-            return Message.ERROR.value
-        
-    def getUserFiles(self, user_id):
-        try:
-            # Fetch file details
-            self.cursor.execute('SELECT * FROM permissions WHERE user_id=?', (user_id,))
-            permissions = self.cursor.fetchall()
-            file_ids = [p[1] for p in permissions]
-
-            placeholders = ','.join(['?' for _ in range(len(file_ids))])
-            query = f'SELECT * FROM files WHERE id IN ({placeholders})'
-            self.cursor.execute(query, file_ids)
-            user_files = self.cursor.fetchall()
-
-            return user_files
-        except Exception as e:
-            print('Get User Files Exception: ', e)
-            return Message.ERROR.value
-        
-
-    def generate_token(self):
-        return str(uuid.uuid4())
-    
-    def get_token(self, email, token):
-        try:
-            self.cursor.execute('''SELECT * FROM tokens WHERE email=? AND token=?''', (email, token))
-            token = self.cursor.fetchone()
-            return token
-        
+            token = str(token)
+            self.cursor.execute('''SELECT file_name FROM resources WHERE token=?''', (token, ))
+            result = self.cursor.fetchone()
+            
+            return result if result else None        
         except Exception as e:
             print('Get token Exception: ', e)
             return Message.ERROR
     
-    def is_token_already_exists(self, email, token):
+    def is_valid_token(self, token: str):
         try:
-            self.cursor.execute('''SELECT * FROM tokens WHERE email=? AND token=?''', (email, token))
-            getToken = self.cursor.fetchone()
+            token = str(token)
+            self.cursor.execute('''SELECT * FROM resources WHERE token=?''', (token,))
 
-            tokenExists = getToken is not None
-            if not tokenExists:
-                return True
-            return False
+            return True if self.cursor.fetchone() else False
         except Exception as e:
-            print('Is Token Already Exists Exception: ', e)
+            print('Is Token Exists Exception: ', e)
             return Message.ERROR
-    
-    def store_token(self, email, token):
-        try:
-            # Store the token and email mapping in a database (e.g., DynamoDB, RDS, etc.)
-            self.cursor.execute('''SELECT * FROM tokens WHERE email=? AND token=?''', (email, token))
-
-            getToken = self.cursor.fetchone()
-            tokenAlreadyExists = getToken is not None
-
-            if not tokenAlreadyExists:
-                self.cursor.execute('''INSERT OR IGNORE INTO tokens (email, token) VALUES (?, ?)''', (email, token))
-                token_id = self.cursor.lastrowid
-                self.conn.commit()
-
-                return token_id
-            
-            return getToken
-        except Exception as e:
-            print('Store Token Exception: ', e)
-            return Message.ERROR
-    
