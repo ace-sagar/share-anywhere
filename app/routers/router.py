@@ -17,7 +17,6 @@ async def access_file(user_token: str):
     if not user_token:
         raise HTTPException(status_code=400, detail="Token is required")
     
-    ########## Get User Details ##########
     resourceManager = ResourceManager()
     resourceManager.connect()
     isValidToken = resourceManager.is_valid_token(user_token)
