@@ -6,6 +6,7 @@ We are going to setup one virtual env for our project and install the requried d
 
 ### Install and Activating the virtual env
 $ python -m venv venv
+
 $ .\venv\Script\activate
 
 ### Install the FastAPI
